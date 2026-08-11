@@ -238,6 +238,92 @@ function roleInfo(role) {
   }
 }
 
+// -- Raw backend string rendering --
+// Serializes the parsed messages into the literal ChatML string a backend
+// receives: <|im_start|>role\ncontent<|im_end|> per turn, with special
+// tokens highlighted. Content is escaped verbatim — no markdown processing,
+// so what you see is exactly the byte stream handed to the tokenizer.
+
+function serializeMessages(messages) {
+  return messages.map(msg => {
+    const role = msg.role || 'unknown';
+    return `<|im_start|>${role}\n${getContent(msg)}<|im_end|>\n`;
+  }).join('');
+}
+
+// A DSH/OpenAI-style payload may carry a top-level `system` string (mapped by
+// the adapter to the provider's system slot) in addition to in-array system
+// messages. Prepend it the same way chat templates do.
+function payloadSystem(data) {
+  if (data && typeof data.system === 'string' && data.system.length > 0) return data.system;
+  return null;
+}
+
+function highlightChatML(s) {
+  return esc(s)
+    .replace(/(&lt;\|im_start\|&gt;)([a-z_]+)?/g, (m, start, role) =>
+      '<span class="tok tok-start">' + start + '</span>' + (role ? '<span class="tok tok-role">' + role + '</span>' : ''))
+    .replace(/(&lt;\|im_end\|&gt;)/g, '<span class="tok tok-end">$1</span>')
+    .replace(/(&lt;\|endoftext\|&gt;)/g, '<span class="tok tok-eot">$1</span>')
+    .replace(/(&lt;\|bos\|&gt;|&lt;\|eos\|&gt;)/g, '<span class="tok tok-bos">$1</span>');
+}
+
+let rawText = '';
+
+function renderRawString() {
+  clearError();
+  const raw = document.getElementById('json-input').value.trim();
+  if (!raw) { showError('Nothing to render — paste some ChatML JSON first.'); return; }
+
+  let data = null;
+  let sys = null;
+  try {
+    const parsed = JSON.parse(raw);
+    data = extractMessages(parsed);
+    sys = payloadSystem(parsed);
+  } catch(e) {
+    try {
+      let lines = raw.split('\n');
+      let msgs = [];
+      for (let line of lines) {
+        if (!line.trim()) continue;
+        msgs = msgs.concat(extractMessages(JSON.parse(line)));
+      }
+      data = msgs.length ? msgs : null;
+    } catch(err) {
+      showError('Invalid format. Must be valid JSON or JSONL.\nError: ' + err.message);
+      return;
+    }
+  }
+  if (!data || !data.length) { showError('Conversation is empty.'); return; }
+
+  const sysPrefix = sys ? `<|im_start|>system\n${sys}<|im_end|>\n` : '';
+  rawText = sysPrefix + serializeMessages(data);
+  document.getElementById('raw-string').innerHTML = highlightChatML(rawText);
+
+  const stats = {};
+  if (sys) stats.system = (stats.system || 0) + 1;
+  data.forEach(m => { stats[m.role] = (stats[m.role] || 0) + 1; });
+  document.getElementById('raw-title').textContent =
+    'ChatML backend string — ' + Object.entries(stats)
+      .map(([r, n]) => n + ' ' + r).join(' · ') + ' · ' + data.length + ' messages';
+
+  document.getElementById('input-panel').style.display = 'none';
+  document.getElementById('conversation').style.display = 'none';
+  document.getElementById('stats-bar').style.display = 'none';
+  document.getElementById('raw-output').style.display = 'block';
+  window.scrollTo(0, 0);
+}
+
+function copyRaw() {
+  navigator.clipboard.writeText(rawText).then(() => {
+    const btn = document.getElementById('raw-copy');
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = original, 1500);
+  });
+}
+
 // -- Rendering --
 function renderConversation() {
   const data = dataset[currentIndex];
@@ -339,6 +425,7 @@ function resetView() {
   document.getElementById('input-panel').style.display = 'block';
   document.getElementById('conversation').style.display = 'none';
   document.getElementById('stats-bar').style.display = 'none';
+  document.getElementById('raw-output').style.display = 'none';
   document.getElementById('nav-controls').style.display = 'none';
   document.getElementById('subtitle').style.display = 'inline';
   clearError();

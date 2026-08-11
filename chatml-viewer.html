@@ -61,6 +61,7 @@ Press Ctrl+Enter (Cmd+Enter on Mac) to render.'></textarea>
 
       <div class="actions">
         <button class="primary" onclick="processInput()">Render conversation</button>
+        <button class="ghost" id="btn-raw" onclick="renderRawString()">Render ChatML string</button>
         <button class="ghost" onclick="loadSample()">load sample</button>
         <span class="hint">Ctrl+Enter</span>
       </div>
@@ -69,6 +70,14 @@ Press Ctrl+Enter (Cmd+Enter on Mac) to render.'></textarea>
     <!-- Render Area -->
     <div id="conversation" style="display: none;"></div>
     <div id="stats-bar" style="display: none;"></div>
+    <div id="raw-output" style="display: none;">
+      <div class="raw-toolbar">
+        <span id="raw-title">ChatML backend string</span>
+        <button class="copy-btn" id="raw-copy" onclick="copyRaw()">Copy</button>
+        <button class="ghost" onclick="resetView()">← Back to Input</button>
+      </div>
+      <pre id="raw-string"></pre>
+    </div>
   </div>
 
   <!-- Scroll to Top / Bottom Controls -->
