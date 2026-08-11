@@ -259,6 +259,14 @@ function payloadSystem(data) {
   return null;
 }
 
+// Top-level tool schemas (OpenAI-style `tools` array). Rendered as a distinct
+// tools turn right after system, mirroring how backends surface function
+// definitions to the model.
+function payloadTools(data) {
+  if (data && Array.isArray(data.tools) && data.tools.length > 0) return data.tools;
+  return null;
+}
+
 function highlightChatML(s) {
   return esc(s)
     .replace(/(&lt;\|im_start\|&gt;)([a-z_]+)?/g, (m, start, role) =>
@@ -277,10 +285,12 @@ function renderRawString() {
 
   let data = null;
   let sys = null;
+  let tools = null;
   try {
     const parsed = JSON.parse(raw);
     data = extractMessages(parsed);
     sys = payloadSystem(parsed);
+    tools = payloadTools(parsed);
   } catch(e) {
     try {
       let lines = raw.split('\n');
@@ -298,11 +308,15 @@ function renderRawString() {
   if (!data || !data.length) { showError('Conversation is empty.'); return; }
 
   const sysPrefix = sys ? `<|im_start|>system\n${sys}<|im_end|>\n` : '';
-  rawText = sysPrefix + serializeMessages(data);
+  const toolsBlock = tools
+    ? `<|im_start|>tools\n${JSON.stringify(tools, null, 2)}<|im_end|>\n`
+    : '';
+  rawText = sysPrefix + toolsBlock + serializeMessages(data);
   document.getElementById('raw-string').innerHTML = highlightChatML(rawText);
 
   const stats = {};
   if (sys) stats.system = (stats.system || 0) + 1;
+  if (tools) stats.tools = tools.length + ' schemas';
   data.forEach(m => { stats[m.role] = (stats[m.role] || 0) + 1; });
   document.getElementById('raw-title').textContent =
     'ChatML backend string — ' + Object.entries(stats)
