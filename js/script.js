@@ -278,6 +278,24 @@ function highlightChatML(s) {
 
 let rawText = '';
 
+// Split a serialized ChatML string into per-turn blocks and render each as
+// its own bubble, so the backend byte stream is readable one role at a time.
+function splitTurns(text) {
+  const re = /(<\|im_start\|>[a-z_]+\n[\s\S]*?<\|im_end\|>\n?)/g;
+  const turns = [];
+  let m;
+  let last = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) turns.push({ role: 'text', content: text.slice(last, m.index) });
+    const block = m[1];
+    const role = block.match(/<\|im_start\|>([a-z_]+)/)[1];
+    turns.push({ role, content: block });
+    last = m.index + block.length;
+  }
+  if (last < text.length) turns.push({ role: 'text', content: text.slice(last) });
+  return turns.filter(t => t.content.trim().length > 0);
+}
+
 function renderRawString() {
   clearError();
   const raw = document.getElementById('json-input').value.trim();
@@ -312,7 +330,23 @@ function renderRawString() {
     ? `<|im_start|>tools\n${JSON.stringify(tools, null, 2)}<|im_end|>\n`
     : '';
   rawText = sysPrefix + toolsBlock + serializeMessages(data);
-  document.getElementById('raw-string').innerHTML = highlightChatML(rawText);
+
+  // Per-turn bubbles
+  const turns = splitTurns(rawText);
+  const rawOut = document.getElementById('raw-string');
+  rawOut.innerHTML = '';
+  for (const turn of turns) {
+    const cls = roleInfo(turn.role).cls;
+    const g = document.createElement('div');
+    g.className = 'msg-group ' + cls;
+    g.innerHTML = `
+      <div class="role-label">${esc(roleInfo(turn.role).label)} · ChatML</div>
+      <div class="bubble raw-bubble">
+        <button class="copy-btn" onclick="copyRawTurn(this, ${JSON.stringify(encodeURIComponent(turn.content))})">Copy</button>
+        <pre class="raw-turn">${highlightChatML(turn.content)}</pre>
+      </div>`;
+    rawOut.appendChild(g);
+  }
 
   const stats = {};
   if (sys) stats.system = (stats.system || 0) + 1;
@@ -327,6 +361,14 @@ function renderRawString() {
   document.getElementById('stats-bar').style.display = 'none';
   document.getElementById('raw-output').style.display = 'block';
   window.scrollTo(0, 0);
+}
+
+function copyRawTurn(btn, encodedText) {
+  navigator.clipboard.writeText(decodeURIComponent(encodedText)).then(() => {
+    const original = btn.textContent;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = original, 1500);
+  });
 }
 
 function copyRaw() {
